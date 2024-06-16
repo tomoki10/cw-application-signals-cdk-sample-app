@@ -93,6 +93,9 @@ export class ApplicationSignalsSampleStack extends cdk.Stack {
 			assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
 			managedPolicies: [
 				iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMFullAccess"),
+				iam.ManagedPolicy.fromAwsManagedPolicyName(
+					"CloudWatchAgentServerPolicy",
+				),
 			],
 		});
 
