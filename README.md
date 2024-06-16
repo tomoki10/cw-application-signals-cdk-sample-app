@@ -23,3 +23,13 @@ docker push "$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-1.amazonaws.com/$REPOSITORY_NA
 ## Application Signals Setup
 
 https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-ECS.html
+
+### Step 3
+
+```
+% aws ssm put-parameter \
+    --name "ecs-cwagent" \
+    --type "String" \
+    --value "`cat ./app/ecs-cwagent.json`" \
+    --region "ap-northeast-1"
+```
