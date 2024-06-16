@@ -1,14 +1,21 @@
-# Welcome to your CDK TypeScript project
 
-This is a blank project for CDK development with TypeScript.
+## Setup
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+### Local
+https://fastapi.tiangolo.com/ja/deployment/docker/
 
-## Useful commands
+docker build -t fastapi-sample:test .
+docker run -d -p 8080:80 fastapi-sample:test  
 
-* `npm run build`   compile typescript to js
-* `npm run watch`   watch for changes and compile
-* `npm run test`    perform the jest unit tests
-* `npx cdk deploy`  deploy this stack to your default AWS account/region
-* `npx cdk diff`    compare deployed stack with current state
-* `npx cdk synth`   emits the synthesized CloudFormation template
+### AWS
+export IMAGE_TAG=latest
+export REPOSITORY_NAME=apm-test
+export AWS_ACCOUNT_ID=123456789012
+export REGISTRY_NAME=$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-1.amazonaws.com
+docker build --platform=linux/x86_64 -t $IMAGE_TAG .
+
+docker tag $IMAGE_TAG $REGISTRY_NAME/$REPOSITORY_NAME
+
+# require assume-role or other
+aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin $REGISTRY_NAME
+docker push "$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-1.amazonaws.com/$REPOSITORY_NAME:$IMAGE_TAG"
