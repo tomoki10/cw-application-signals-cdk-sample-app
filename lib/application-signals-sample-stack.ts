@@ -7,6 +7,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ssm from "aws-cdk-lib/aws-ssm";
+import * as sns from "aws-cdk-lib/aws-sns";
 
 export class ApplicationSignalsSampleStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -257,6 +258,14 @@ export class ApplicationSignalsSampleStack extends cdk.Stack {
 				},
 			},
 		);
+
+		// SLI/SLO Topic
+		const topic = new sns.Topic(this, "SliSloAlarmTopic");
+		new sns.Subscription(this, "SliSloAlarmEmail", {
+			endpoint: "test@exampl.com",
+			protocol: sns.SubscriptionProtocol.EMAIL,
+			topic: topic,
+		});
 
 		new cdk.CfnOutput(this, "LOAD_BALANCER_DNS_NAME", {
 			value: albForApp.loadBalancerName,
