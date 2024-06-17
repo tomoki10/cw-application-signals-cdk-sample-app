@@ -6,6 +6,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 
 export class ApplicationSignalsSampleStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -114,11 +115,17 @@ export class ApplicationSignalsSampleStack extends cdk.Stack {
 
 		const logGroup = new logs.LogGroup(this, `${id}-ServiceLogGroup`, {
 			retention: logs.RetentionDays.THREE_MONTHS,
-			removalPolicy: cdk.RemovalPolicy.RETAIN,
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
 		});
 
-		serviceTaskDefinition
-			.addContainer(`${id}-ServiceTaskContainerDefinition`, {
+		// ボリュームの作成
+		serviceTaskDefinition.addVolume({
+			name: "opentelemetry-auto-instrumentation-python",
+		});
+
+		const mainContainer = serviceTaskDefinition.addContainer(
+			`${id}-ServiceTaskContainerDefinition`,
+			{
 				image: ecs.ContainerImage.fromEcrRepository(
 					ecr.Repository.fromRepositoryName(
 						this,
@@ -131,11 +138,83 @@ export class ApplicationSignalsSampleStack extends cdk.Stack {
 					streamPrefix: "ApmSample",
 					logGroup,
 				}),
+				environment: {
+					// Example: https://github.com/aws-observability/application-signals-demo/blob/main/pet_clinic_insurance_service/ec2-setup.sh
+					OTEL_RESOURCE_ATTRIBUTES: `service.name=APM_SAMPLE,aws.log.group.names=${logGroup.logGroupName}`,
+					OTEL_AWS_APPLICATION_SIGNALS_ENABLED: "true",
+					OTEL_METRICS_EXPORTER: "none",
+					OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+					// If sending metrics to the CloudWatch sidecar, configure: http://127.0.0.1:4316/v1/metrics
+					OTEL_AWS_APPLICATION_SIGNALS_EXPORTER_ENDPOINT:
+						"http://127.0.0.1:4316/v1/metrics",
+					// If sending traces to the CloudWatch sidecar, configure: http://localhost:4316/v1/traces
+					OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://localhost:4316/v1/traces",
+					// See: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Configure.html
+					OTEL_TRACES_SAMPLER: "parentbased_traceidratio",
+					OTEL_TRACES_SAMPLER_ARG: "0.05",
+					// OTEL_PROPAGATORS: "",
+					OTEL_PYTHON_DISTRO: "aws_distro",
+					OTEL_PYTHON_CONFIGURATOR: "aws_configurator", // docsはaws_configuration
+					PYTHONPATH:
+						"/otel-auto-instrumentation-python/opentelemetry/instrumentation/auto_instrumentation:/code/app:/otel-auto-instrumentation-python",
+					// DJANGO_SETTINGS_MODULE: "", // Not Django
+				},
+			},
+		);
+		mainContainer.addPortMappings({
+			containerPort: 80,
+			hostPort: 80,
+			protocol: ecs.Protocol.TCP,
+		});
+		mainContainer.addMountPoints({
+			sourceVolume: "opentelemetry-auto-instrumentation-python",
+			containerPath: "/otel-auto-instrumentation-python",
+			readOnly: false,
+		});
+
+		// --- ecs-cwagent ---
+		serviceTaskDefinition.addContainer(`${id}-CwAgentContainerDefinition`, {
+			image: ecs.ContainerImage.fromRegistry(
+				// See: https://gallery.ecr.aws/cloudwatch-agent/cloudwatch-agent
+				"public.ecr.aws/cloudwatch-agent/cloudwatch-agent:latest-amd64",
+			),
+			secrets: {
+				CW_CONFIG_CONTENT: ecs.Secret.fromSsmParameter(
+					ssm.StringParameter.fromStringParameterName(
+						this,
+						"CWConfigParameter",
+						"ecs-cwagent",
+					),
+				),
+			},
+			logging: ecs.LogDrivers.awsLogs({
+				streamPrefix: "ecs",
+				logGroup: new cdk.aws_logs.LogGroup(this, "LogGroup", {
+					logGroupName: "/ecs/ecs-cwagent",
+					removalPolicy: cdk.RemovalPolicy.DESTROY,
+				}),
+			}),
+		});
+
+		// --- init ---
+		serviceTaskDefinition
+			.addContainer("InitContainer", {
+				image: ecs.ContainerImage.fromRegistry(
+					// See: https://gallery.ecr.aws/aws-observability/adot-autoinstrumentation-python
+					"public.ecr.aws/aws-observability/adot-autoinstrumentation-python:v0.2.0",
+				),
+				essential: false,
+				command: [
+					"cp",
+					"-a",
+					"/autoinstrumentation/.",
+					"/otel-auto-instrumentation-python",
+				],
 			})
-			.addPortMappings({
-				containerPort: 80,
-				hostPort: 80,
-				protocol: ecs.Protocol.TCP,
+			.addMountPoints({
+				sourceVolume: "opentelemetry-auto-instrumentation-python",
+				containerPath: "/otel-auto-instrumentation-python",
+				readOnly: false,
 			});
 
 		// Cluster
@@ -178,5 +257,9 @@ export class ApplicationSignalsSampleStack extends cdk.Stack {
 				},
 			},
 		);
+
+		new cdk.CfnOutput(this, "LOAD_BALANCER_DNS_NAME", {
+			value: albForApp.loadBalancerName,
+		});
 	}
 }
