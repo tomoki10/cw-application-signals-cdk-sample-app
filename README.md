@@ -20,6 +20,13 @@ The Dockerfile and sample apps are created using the following instructions.
 ```
 
 ### AWS Deploy
+
+#### ECR Deploy
+```
+% npx cdk deploy EcrStack --require-approval never
+```
+
+#### Push image to ECR
 ```
 % export IMAGE_TAG=latest
 % export REPOSITORY_NAME=apm-test
@@ -33,4 +40,9 @@ The Dockerfile and sample apps are created using the following instructions.
 % aws ecr get-login-password --region ap-northeast-1 | \
     docker login --username AWS --password-stdin $REGISTRY_NAME
 % docker push "$AWS_ACCOUNT_ID.dkr.ecr.ap-northeast-1.amazonaws.com/$REPOSITORY_NAME:$IMAGE_TAG"
+```
+
+#### VPC and ECS other infra resource deploy
+```
+% npx cdk deploy ApplicationSignalsSampleStack --require-approval never
 ```
